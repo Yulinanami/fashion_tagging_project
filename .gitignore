@@ -17,3 +17,5 @@ renamed/
 # System
 .DS_Store
 Thumbs.db
+
+*.jpg
