@@ -1,16 +1,15 @@
 # renaming.py
 import shutil
-import json
 from pathlib import Path
 
 from tagging import tag_image
+from json_writer import append_record_to_json
 
 
 def safe_str(s) -> str:
     """把任意值变成适合文件名的字符串：None -> "", 去掉特殊字符。"""
     if s is None:
         return ""
-    # 如果不是字符串，先转成字符串（大模型有时会给数字、列表）
     if not isinstance(s, str):
         s = str(s)
 
@@ -27,7 +26,6 @@ def build_new_name(tags: dict, index: int, ext: str) -> str:
     gender = safe_str(tags.get("gender", ""))
     style = safe_str(tags.get("overall_style", ""))
 
-    # 防御：top / bottom 可能是 None、字符串、列表等
     top_raw = tags.get("top") or {}
     if not isinstance(top_raw, dict):
         top_raw = {}
@@ -45,44 +43,23 @@ def build_new_name(tags: dict, index: int, ext: str) -> str:
     if isinstance(occasions, list) and occasions:
         occasion = safe_str(occasions[0])
     else:
-        # 有时模型会返回字符串而不是列表
         occasion = safe_str(occasions) if isinstance(occasions, str) else ""
 
     parts = [gender, style, top_cat, bottom_cat, season, occasion]
-    parts = [p for p in parts if p]   # 去掉空字段
+    parts = [p for p in parts if p]
 
     base = "_".join(parts) if parts else "outfit"
     return f"{base}_{index:03d}{ext}"
-
-
-def save_tags_json(tags: dict, original_path: Path, target_path: Path,
-                   json_root: str = "metadata") -> None:
-    """
-    将标签写入一个 JSON 文件：
-    - 目录：json_root（默认 'metadata'）
-    - 文件名：与重命名后的图片同名的 .json
-    """
-    json_dir = Path(json_root)
-    json_dir.mkdir(parents=True, exist_ok=True)
-
-    record = {
-        "original_filename": original_path.name,
-        "renamed_filename": target_path.name,
-        "original_path": str(original_path),
-        "renamed_path": str(target_path),
-        "labels": tags,
-    }
-
-    json_path = json_dir / f"{target_path.stem}.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=2)
 
 
 def batch_tag_and_rename(
     src_dir: str = "images/to_rename",
     dst_dir: str = "images/renamed"
 ):
-    """遍历 src_dir，对每张图片打标签并重命名复制到 dst_dir，同时写出 JSON 标签。"""
+    """
+    遍历 src_dir，对每张图片打标签并重命名复制到 dst_dir，
+    同时将所有标签汇总写入 metadata/dataset.json（单一文件，数组形式）。
+    """
     src = Path(src_dir)
     dst = Path(dst_dir)
     dst.mkdir(parents=True, exist_ok=True)
@@ -117,8 +94,17 @@ def batch_tag_and_rename(
         shutil.copy2(img_path, target_path)
         print(f"[OK] 重命名为：{target_path.name}")
 
+        # ✅ 构造一条记录，统一写入 metadata/dataset.json
+        record = {
+            "original_filename": img_path.name,
+            "renamed_filename": target_path.name,
+            "original_path": str(img_path),
+            "renamed_path": str(target_path),
+            "labels": tags,
+        }
+
         try:
-            save_tags_json(tags, img_path, target_path)
-            print(f"[OK] 标签 JSON 已写入：metadata/{target_path.stem}.json")
+            append_record_to_json(record)
+            print("[OK] 已写入汇总 JSON：metadata/dataset.json")
         except Exception as e:
-            print(f"[WARN] 写入 JSON 失败（不影响重命名）：{e}")
+            print(f"[WARN] 写入汇总 JSON 失败（不影响重命名）：{e}")

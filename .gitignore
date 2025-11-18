@@ -13,7 +13,7 @@ venv/
 
 # Renamed output folder
 renamed/
-
+dataset.json
 # System
 .DS_Store
 Thumbs.db
