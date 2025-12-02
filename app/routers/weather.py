@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query
+import logging
 
 from app.schemas import WeatherResponse
 from app.services.weather import fetch_weather_now
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/weather/now", response_model=WeatherResponse)
@@ -18,12 +20,22 @@ async def weather_now(
     lon: float | None = Query(default=None, description="经度，可选"),
 ):
     try:
-        return await fetch_weather_now(
+        payload = await fetch_weather_now(
             city=city,
             location_id=location_id,
             lat=lat,
             lon=lon,
         )
+        response = WeatherResponse(**payload)
+        logger.info(
+            "Weather query success city_param=%s location_id=%s lat=%s lon=%s resolved_city=%s",
+            city or response.city,
+            location_id,
+            lat,
+            lon,
+            response.city,
+        )
+        return response
     except HTTPException:
         raise
     except Exception as exc:
