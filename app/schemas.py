@@ -33,3 +33,22 @@ class AuthResponse(UserOut):
     expires_at: datetime
     refresh_token: str
     refresh_expires_at: datetime
+
+
+class WeatherNow(BaseModel):
+    temp: Optional[str] = None
+    text: Optional[str] = None
+    feels_like: Optional[str] = None
+    wind_dir: Optional[str] = None
+    wind_scale: Optional[str] = None
+    humidity: Optional[str] = None
+    icon: Optional[str] = None
+
+
+class WeatherResponse(BaseModel):
+    city: str
+    location_id: str
+    update_time: Optional[str] = None
+    admin_area: Optional[str] = None
+    source: str = "qweather"
+    now: WeatherNow

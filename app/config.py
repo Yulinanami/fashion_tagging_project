@@ -9,6 +9,13 @@ MODEL_NAME = "gemini-2.5-flash-lite"
 
 DB_URL = os.environ.get("DB_URL") or "mysql+pymysql://root:20040129@localhost:3306/dresscode"
 
+QWEATHER_HOST = os.environ.get("QWEATHER_HOST") or "m36x88fbn7.re.qweatherapi.com"
+QWEATHER_KEY = os.environ.get("QWEATHER_KEY") or "95bedf0eed2945ffb7b3450f583136cf"
+QWEATHER_LANG = os.environ.get("QWEATHER_LANG") or "zh-hans"
+QWEATHER_UNIT = os.environ.get("QWEATHER_UNIT") or "m"
+QWEATHER_TIMEOUT = float(os.environ.get("QWEATHER_TIMEOUT") or 6.0)
+QWEATHER_CACHE_SECONDS = int(os.environ.get("QWEATHER_CACHE_SECONDS") or 300)
+
 FASHION_PROMPT = """
 你是一个专业的时尚图像标注助手，请对给定的穿搭图片进行结构化标签标注。
 

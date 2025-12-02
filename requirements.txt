@@ -5,3 +5,4 @@ uvicorn[standard]
 sqlalchemy
 pymysql
 python-multipart
+httpx
