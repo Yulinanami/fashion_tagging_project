@@ -41,6 +41,37 @@ def init_db():
     from models import User  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_columns()
+
+
+def _ensure_columns():
+    # 自检 users 表字段，不存在则补列（兼容不支持 IF NOT EXISTS 的 MySQL 版本）
+    desired = {
+        "token_expires_at": "DATETIME",
+        "refresh_token": "VARCHAR(255)",
+        "refresh_expires_at": "DATETIME",
+    }
+    with engine.begin() as conn:
+        existing = set()
+        try:
+            rows = conn.execute(
+                text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_NAME='users' AND TABLE_SCHEMA=DATABASE()"
+                )
+            )
+            existing = {row[0] for row in rows}
+        except Exception:
+            existing = set()
+
+        for col, ddl in desired.items():
+            if col in existing:
+                continue
+            try:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+            except Exception:
+                # 如果失败（权限/版本），继续启动；此时需手动迁移
+                pass
 
 
 def get_db():

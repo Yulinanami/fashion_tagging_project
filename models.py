@@ -13,4 +13,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     display_name = Column(String(255), nullable=True)
     token = Column(String(255), nullable=True, index=True)
+    token_expires_at = Column(DateTime, nullable=True)
+    refresh_token = Column(String(255), nullable=True, index=True)
+    refresh_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

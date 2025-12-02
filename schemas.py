@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr
@@ -14,6 +15,10 @@ class UserLogin(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 class UserOut(BaseModel):
     id: int
     email: EmailStr
@@ -25,3 +30,6 @@ class UserOut(BaseModel):
 
 class AuthResponse(UserOut):
     token: str
+    expires_at: datetime
+    refresh_token: str
+    refresh_expires_at: datetime
