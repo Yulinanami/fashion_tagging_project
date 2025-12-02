@@ -48,6 +48,8 @@ class WeatherNow(BaseModel):
 class WeatherResponse(BaseModel):
     city: str
     location_id: str
+    lat: Optional[str] = None
+    lon: Optional[str] = None
     update_time: Optional[str] = None
     admin_area: Optional[str] = None
     source: str = "qweather"

@@ -28,12 +28,14 @@ async def weather_now(
         )
         response = WeatherResponse(**payload)
         logger.info(
-            "Weather query success city_param=%s location_id=%s lat=%s lon=%s resolved_city=%s",
+            "Weather query success city_param=%s location_id=%s lat=%s lon=%s resolved_city=%s resolved_lat=%s resolved_lon=%s",
             city or response.city,
             location_id,
             lat,
             lon,
             response.city,
+            response.lat,
+            response.lon,
         )
         return response
     except HTTPException:

@@ -151,10 +151,20 @@ async def fetch_weather_now(
         },
     )
     now = weather.get("now") or {}
+    resolved_city = location.get("name") or city or resolved_id
+    resolved_lat = location.get("lat") or (str(lat) if lat is not None else None)
+    resolved_lon = location.get("lon") or (str(lon) if lon is not None else None)
+    resolved_location_id = (
+        location.get("id")
+        or location.get("locationId")
+        or resolved_id
+    )
     return {
-        "city": location.get("name") or city or resolved_id,
+        "city": resolved_city,
         "admin_area": location.get("adm1") or location.get("adm2") or location.get("country"),
-        "location_id": resolved_id,
+        "location_id": resolved_location_id,
+        "lat": resolved_lat,
+        "lon": resolved_lon,
         "update_time": weather.get("updateTime"),
         "source": "qweather",
         "now": {
