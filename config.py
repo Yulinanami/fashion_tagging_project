@@ -7,6 +7,8 @@ API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyAY_1TxdIMEQ8XHlkHCUB7kaO53j
 # MODEL_NAME = "gemini-2.5-flash"
 MODEL_NAME = "gemini-2.5-flash-lite"
 
+DB_URL = os.environ.get("DB_URL") or "mysql+pymysql://root:20040129@localhost:3306/dresscode"
+
 FASHION_PROMPT = """
 你是一个专业的时尚图像标注助手，请对给定的穿搭图片进行结构化标签标注。
 

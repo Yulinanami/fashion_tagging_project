@@ -2,3 +2,6 @@ google-generativeai
 pillow
 fastapi
 uvicorn[standard]
+sqlalchemy
+pymysql
+python-multipart
