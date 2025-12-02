@@ -62,14 +62,46 @@ async def _resolve_location(
     lat: Optional[float],
     lon: Optional[float],
 ) -> Tuple[str, Dict[str, Any]]:
+    # 允许 city 传入 "lat,lon" 或 "lon,lat" 以防前端直接拼接
+    if city and "," in city and lat is None and lon is None:
+        parts = [p.strip() for p in city.split(",", maxsplit=1)]
+        try:
+            first, second = float(parts[0]), float(parts[1])
+            # 和风要求 "lon,lat"
+            if abs(first) <= 90 and abs(second) <= 180:
+                # 大概率是 lat, lon
+                lat, lon = first, second
+            else:
+                # 大概率是 lon, lat
+                lon, lat = first, second
+        except Exception:
+            # 如果解析失败，继续走城市名逻辑
+            lat = None
+            lon = None
+
     if location_id:
         return location_id, {"name": city}
     if lat is not None and lon is not None:
-        return f"{lon},{lat}", {"name": city or f"{lat},{lon}"}
+        # 通过经纬度反查城市，拿到 LocationID 和名称
+        lookup = await _get_json(
+            "/geo/v2/city/lookup",
+            {"location": f"{lon},{lat}", "lang": QWEATHER_LANG},
+        )
+        locations = lookup.get("location") or []
+        best_match = locations[0] if locations else {}
+        resolved_id = (
+            best_match.get("id")
+            or best_match.get("locationId")
+            or f"{lon},{lat}"
+        )
+        return resolved_id, {
+            "name": best_match.get("name") or city or f"{lat},{lon}",
+            "adm1": best_match.get("adm1"),
+        }
     if city:
         lookup = await _get_json(
             "/geo/v2/city/lookup",
-            {"location": city},
+            {"location": city, "lang": QWEATHER_LANG},
         )
         locations = lookup.get("location") or []
         if not locations:
@@ -121,7 +153,7 @@ async def fetch_weather_now(
     now = weather.get("now") or {}
     return {
         "city": location.get("name") or city or resolved_id,
-        "admin_area": location.get("adm1"),
+        "admin_area": location.get("adm1") or location.get("adm2") or location.get("country"),
         "location_id": resolved_id,
         "update_time": weather.get("updateTime"),
         "source": "qweather",
