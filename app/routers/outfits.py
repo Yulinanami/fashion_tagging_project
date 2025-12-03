@@ -165,7 +165,7 @@ def add_favorite(
         db.add(Favorite(user_id=current_user.id, outfit_id=outfit_id))
         db.commit()
         logger.info("收藏成功 user_id=%s outfit_id=%s", current_user.id, outfit_id)
-    return ToggleFavoriteResponse(is_favorite=True)
+    return ToggleFavoriteResponse.model_validate({"isFavorite": True})
 
 
 @router.delete("/favorites/{outfit_id}", response_model=ToggleFavoriteResponse)
@@ -182,4 +182,4 @@ def remove_favorite(
     if deleted:
         db.commit()
         logger.info("取消收藏 user_id=%s outfit_id=%s", current_user.id, outfit_id)
-    return ToggleFavoriteResponse(is_favorite=False)
+    return ToggleFavoriteResponse.model_validate({"isFavorite": False})
