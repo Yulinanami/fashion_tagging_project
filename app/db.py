@@ -3,6 +3,7 @@ from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import DB_URL
+from app.seed_data import ensure_outfits_seeded
 
 Base = declarative_base()
 
@@ -42,6 +43,7 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
+    _seed()
 
 
 def _ensure_columns():
@@ -72,6 +74,11 @@ def _ensure_columns():
             except Exception:
                 # 如果失败（权限/版本），继续启动；此时需手动迁移
                 pass
+
+
+def _seed():
+    with SessionLocal() as db:
+        ensure_outfits_seeded(db)
 
 
 def get_db():

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
-from app.routers import auth, health, tagging, weather
+from app.routers import auth, health, tagging, weather, outfits
 
 
 def create_app() -> FastAPI:
@@ -24,6 +24,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(tagging.router)
     app.include_router(weather.router)
+    app.include_router(outfits.router)
 
     @app.on_event("startup")
     def on_startup():

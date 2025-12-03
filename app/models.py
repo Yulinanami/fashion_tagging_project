@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 
 from app.db import Base
 
@@ -16,4 +16,31 @@ class User(Base):
     token_expires_at = Column(DateTime, nullable=True)
     refresh_token = Column(String(255), nullable=True, index=True)
     refresh_expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Outfit(Base):
+    __tablename__ = "outfits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    image_url = Column(String(512), nullable=True)
+    gender = Column(String(50), nullable=False, default="unisex")
+    style = Column(String(100), nullable=True)
+    season = Column(String(100), nullable=True)
+    scene = Column(String(100), nullable=True)
+    weather = Column(String(100), nullable=True)
+    tags = Column(Text, nullable=True)  # JSON 字符串
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Favorite(Base):
+    __tablename__ = "favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "outfit_id", name="uq_user_outfit"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    outfit_id = Column(Integer, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

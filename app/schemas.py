@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserCreate(BaseModel):
@@ -54,3 +54,41 @@ class WeatherResponse(BaseModel):
     admin_area: Optional[str] = None
     source: str = "qweather"
     now: WeatherNow
+
+
+class OutfitTags(BaseModel):
+    style: List[str] = []
+    season: List[str] = []
+    scene: List[str] = []
+    weather: List[str] = []
+    general: List[str] = []
+
+
+class OutfitOut(BaseModel):
+    id: int
+    title: str
+    image_url: Optional[str] = Field(None, alias="imageUrl")
+    gender: str
+    tags: OutfitTags
+    is_favorite: bool = Field(False, alias="isFavorite")
+
+    class Config:
+        from_attributes = True
+        allow_population_by_field_name = True
+
+
+class PagedOutfits(BaseModel):
+    items: List[OutfitOut]
+    page: int
+    page_size: int = Field(..., alias="pageSize")
+    total: int
+
+    class Config:
+        allow_population_by_field_name = True
+
+
+class ToggleFavoriteResponse(BaseModel):
+    is_favorite: bool = Field(..., alias="isFavorite")
+
+    class Config:
+        allow_population_by_field_name = True
