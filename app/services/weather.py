@@ -159,7 +159,7 @@ async def fetch_weather_now(
         or location.get("locationId")
         or resolved_id
     )
-    return {
+    result = {
         "city": resolved_city,
         "admin_area": location.get("adm1") or location.get("adm2") or location.get("country"),
         "location_id": resolved_location_id,
