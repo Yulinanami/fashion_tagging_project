@@ -14,7 +14,7 @@ else:
 API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyD0p3tTZH0HdDD0pt8zGTDLpOCa8xNZQrE"
 
 # 标注/标签生成模型
-MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME") or "gemini-2.5-flash-lite"
+MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME") or "gemini-2.5-flash"
 # 换装模型（支持 image 输入与输出）
 TRYON_MODEL_NAME = os.environ.get("GEMINI_TRYON_MODEL_NAME") or "gemini-2.5-flash-image"
 
