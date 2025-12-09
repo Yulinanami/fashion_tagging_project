@@ -10,6 +10,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 1,
         "title": "夏日通勤",
+        "image_url": "/static/outfits/outfit_1_1.png",
         "gender": "female",
         "style": "通勤",
         "season": "夏季",
@@ -26,6 +27,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 2,
         "title": "周末休闲",
+        "image_url": "/static/outfits/outfit_2_1.jpg",
         "gender": "unisex",
         "style": "休闲",
         "season": "四季",
@@ -42,6 +44,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 3,
         "title": "运动风",
+        "image_url": "/static/outfits/outfit_3_1.jpg",
         "gender": "male",
         "style": "运动",
         "season": "夏季",
@@ -58,6 +61,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 4,
         "title": "雨天通勤",
+        "image_url": "/static/outfits/outfit_4_1.jpg",
         "gender": "female",
         "style": "通勤",
         "season": "春季",
@@ -74,6 +78,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 5,
         "title": "晚间约会",
+        "image_url": "/static/outfits/outfit_5_1.jpg",
         "gender": "female",
         "style": "优雅",
         "season": "夏季",
@@ -90,6 +95,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 6,
         "title": "秋日街头",
+        "image_url": "/static/outfits/outfit_6_1.jpg",
         "gender": "unisex",
         "style": "街头",
         "season": "秋季",
@@ -106,6 +112,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 7,
         "title": "冬季复古旅行",
+        "image_url": "/static/outfits/outfit_7_1.jpg",
         "gender": "unisex",
         "style": "复古",
         "season": "冬季",
@@ -122,6 +129,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 8,
         "title": "办公简约",
+        "image_url": "/static/outfits/outfit_8_1.jpg",
         "gender": "female",
         "style": "通勤",
         "season": "四季",
@@ -141,7 +149,20 @@ SEED_OUTFITS: List[dict] = [
 def ensure_outfits_seeded(db: Session):
     from app import models
 
-    existing_ids: Set[int] = {row.id for row in db.query(models.Outfit.id).all()}
+    seed_map = {item["id"]: item for item in SEED_OUTFITS}
+    existing: List[models.Outfit] = db.query(models.Outfit).all()
+    existing_ids: Set[int] = {row.id for row in existing}
+    updated = 0
+    for row in existing:
+        seed = seed_map.get(row.id)
+        if not seed:
+            continue
+        desired_image = seed.get("image_url")
+        # 统一封面为 *_1 文件，若不同则更新
+        if desired_image and row.image_url != desired_image:
+            row.image_url = desired_image
+            db.add(row)
+            updated += 1
     inserted = 0
     for item in SEED_OUTFITS:
         if item["id"] in existing_ids:
@@ -149,6 +170,7 @@ def ensure_outfits_seeded(db: Session):
         outfit = models.Outfit(
             id=item["id"],
             title=item["title"],
+            image_url=item.get("image_url"),
             gender=item["gender"],
             style=item.get("style"),
             season=item.get("season"),
@@ -158,5 +180,5 @@ def ensure_outfits_seeded(db: Session):
         )
         db.add(outfit)
         inserted += 1
-    if inserted:
+    if inserted or updated:
         db.commit()

@@ -70,6 +70,7 @@ class OutfitOut(BaseModel):
     image_url: Optional[str] = Field(None, alias="imageUrl")
     gender: str
     tags: OutfitTags
+    images: List[str] = Field(default_factory=list, alias="images")
     is_favorite: bool = Field(False, alias="isFavorite")
 
     class Config:

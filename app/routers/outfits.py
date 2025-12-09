@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import List, Optional, Set
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import or_
@@ -29,6 +30,25 @@ def _parse_tags(raw: Optional[str]) -> OutfitTags:
         return OutfitTags(general=items)
 
 
+def _collect_images(outfit_id: int, cover: Optional[str]) -> List[str]:
+    """收集静态目录中的多张穿搭图片，约定文件名为 outfit_<id>_<数字>.*"""
+    images: List[str] = []
+    if cover:
+        images.append(cover)
+    pattern_root = Path("static") / "outfits"
+    if pattern_root.exists():
+        for path in sorted(pattern_root.glob(f"outfit_{outfit_id}_*")):
+            # 仅保留后缀为数字的文件，避免同图别名重复
+            stem = path.stem
+            suffix_part = stem.split("_")[-1]
+            if not suffix_part.isdigit():
+                continue
+            url = f"/static/outfits/{path.name}"
+            if url not in images:
+                images.append(url)
+    return images
+
+
 def _serialize(outfit: Outfit, favorite_ids: Set[int]) -> OutfitOut:
     return OutfitOut(
         id=outfit.id,
@@ -36,6 +56,7 @@ def _serialize(outfit: Outfit, favorite_ids: Set[int]) -> OutfitOut:
         image_url=outfit.image_url,
         gender=outfit.gender,
         tags=_parse_tags(outfit.tags),
+        images=_collect_images(outfit.id, outfit.image_url),
         is_favorite=outfit.id in favorite_ids,
     )
 
