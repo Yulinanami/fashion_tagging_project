@@ -1,11 +1,18 @@
-# config.py
 import os
 
 # 从环境变量里拿 key，也可以直接写死一个字符串
-API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyAY_1TxdIMEQ8XHlkHCUB7kaO53jbQfSns"
+# 默认值更新为用户提供的 Key，生产环境建议改为环境变量注入
+API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyD0p3tTZH0HdDD0pt8zGTDLpOCa8xNZQrE"
 
-# MODEL_NAME = "gemini-2.5-flash"
-MODEL_NAME = "gemini-2.5-flash-lite"
+# 标注/标签生成模型
+MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME") or "gemini-2.5-flash-lite"
+# 换装模型（支持 image 输入与输出）
+TRYON_MODEL_NAME = os.environ.get("GEMINI_TRYON_MODEL_NAME") or "gemini-2.5-flash-image"
+
+# 外部换装 API（优先使用，避免模型配额限制）
+TRYON_API_URL = os.environ.get("TRYON_API_URL") or "https://tryon-api.com"
+TRYON_API_KEY = os.environ.get("TRYON_API_KEY") or "ta_3d2523e991944a8db823bebb6fb3754d"
+TRYON_RESULT_DIR = os.environ.get("TRYON_RESULT_DIR") or "static/tryon_results"
 
 DB_URL = os.environ.get("DB_URL") or "mysql+pymysql://root:20040129@localhost:3306/dresscode"
 

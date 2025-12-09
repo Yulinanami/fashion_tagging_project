@@ -1,10 +1,13 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
-from app.routers import auth, health, tagging, weather, outfits
+from app.routers import auth, health, tagging, weather, outfits, tryon
+from app.config import TRYON_RESULT_DIR
 
 
 def create_app() -> FastAPI:
@@ -25,6 +28,13 @@ def create_app() -> FastAPI:
     app.include_router(tagging.router)
     app.include_router(weather.router)
     app.include_router(outfits.router)
+    app.include_router(tryon.router)
+
+    # 静态文件（换装结果等）
+    static_root = Path("static")
+    static_root.mkdir(parents=True, exist_ok=True)
+    Path(TRYON_RESULT_DIR).mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=static_root), name="static")
 
     @app.on_event("startup")
     def on_startup():

@@ -92,3 +92,15 @@ class ToggleFavoriteResponse(BaseModel):
 
     class Config:
         allow_population_by_field_name = True
+
+
+class TryOnResponse(BaseModel):
+    job_id: str = Field(..., alias="jobId")
+    result_image_base64: str = Field(..., alias="resultImageBase64")
+    image_url: Optional[str] = Field(None, alias="imageUrl")
+    model: str
+    prompt: str
+    message: Optional[str] = None
+
+    class Config:
+        allow_population_by_field_name = True
