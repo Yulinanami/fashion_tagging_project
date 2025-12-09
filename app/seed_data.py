@@ -10,7 +10,7 @@ SEED_OUTFITS: List[dict] = [
     {
         "id": 1,
         "title": "夏日通勤",
-        "image_url": "/static/outfits/outfit_1_1.png",
+        "image_url": "/static/outfits/outfit_1_2.jpg",
         "gender": "female",
         "style": "通勤",
         "season": "夏季",
