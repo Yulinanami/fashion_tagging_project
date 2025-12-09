@@ -5,11 +5,13 @@ import logging
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import httpx
+from PIL import Image
+from io import BytesIO
 
-from app.config import TRYON_API_KEY, TRYON_API_URL, TRYON_RESULT_DIR
+from app.config import DASHSCOPE_API_KEY, TRYON_MODEL, TRYON_RESULT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -18,46 +20,130 @@ class TryOnServiceError(RuntimeError):
     """外部换装服务异常"""
 
 
-async def _submit_job(
-    person_bytes: bytes,
-    garment_bytes: bytes,
-    person_mime: Optional[str],
-    garment_mime: Optional[str],
-) -> Tuple[str, str]:
-    url = f"{TRYON_API_URL.rstrip('/')}/api/v1/tryon"
-    headers = {"Authorization": f"Bearer {TRYON_API_KEY}"}
+def _get_api_key() -> str:
+    if not DASHSCOPE_API_KEY:
+        raise TryOnServiceError("未配置 DASHSCOPE_API_KEY")
+    return DASHSCOPE_API_KEY
+
+
+def _prepare_image(data: bytes, max_side: int = 4000, min_side: int = 150) -> tuple[bytes, str]:
+    """
+    确保图片分辨率满足接口要求：最长边 < max_side，最短边 > min_side，大小 < 5MB。
+    返回 (bytes, mime)
+    """
+    try:
+        img = Image.open(BytesIO(data)).convert("RGB")
+    except Exception as exc:
+        raise TryOnServiceError(f"读取图片失败：{exc}")
+
+    w, h = img.size
+    if min(w, h) < min_side:
+        raise TryOnServiceError("图片尺寸过小，请选择长宽至少 150 像素的图片")
+
+    scale = 1.0
+    if max(w, h) > max_side:
+        scale = max_side / max(w, h)
+        new_w, new_h = int(w * scale), int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        w, h = img.size
+
+    buffer = BytesIO()
+    quality = 92
+    img.save(buffer, format="JPEG", quality=quality)
+    size_bytes = buffer.tell()
+
+    # 控制文件大小在 5MB 以内
+    while size_bytes > 5 * 1024 * 1024 and quality > 70:
+        quality -= 5
+        buffer.seek(0)
+        buffer.truncate()
+        img.save(buffer, format="JPEG", quality=quality)
+        size_bytes = buffer.tell()
+
+    buffer.seek(0)
+    return buffer.read(), "image/jpeg"
+
+
+async def _get_upload_policy(client: httpx.AsyncClient) -> Dict[str, Any]:
+    url = "https://dashscope.aliyuncs.com/api/v1/uploads"
+    headers = {
+        "Authorization": f"Bearer {_get_api_key()}",
+        "Content-Type": "application/json",
+    }
+    params = {"action": "getPolicy", "model": TRYON_MODEL}
+    resp = await client.get(url, headers=headers, params=params)
+    if resp.status_code != 200:
+        raise TryOnServiceError(f"获取上传凭证失败: HTTP {resp.status_code} {resp.text}")
+    return resp.json().get("data") or {}
+
+
+async def _upload_to_oss(policy: Dict[str, Any], file_name: str, data: bytes, mime: Optional[str]) -> str:
+    key = f"{policy['upload_dir']}/{file_name}"
     files = {
-        "person_images": ("person.jpg", person_bytes, person_mime or "image/jpeg"),
-        "garment_images": ("garment.jpg", garment_bytes, garment_mime or "image/jpeg"),
+        "OSSAccessKeyId": (None, policy["oss_access_key_id"]),
+        "Signature": (None, policy["signature"]),
+        "policy": (None, policy["policy"]),
+        "x-oss-object-acl": (None, policy["x_oss_object_acl"]),
+        "x-oss-forbid-overwrite": (None, policy["x_oss_forbid_overwrite"]),
+        "key": (None, key),
+        "success_action_status": (None, "200"),
+        "file": (file_name, data, mime or "image/jpeg"),
     }
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(url, headers=headers, files=files, data={"fast_mode": "false"})
-        if resp.status_code >= 400:
-            raise TryOnServiceError(f"提交失败：HTTP {resp.status_code} {resp.text}")
-        data = resp.json()
-        job_id = data.get("jobId")
-        status_url = data.get("statusUrl")
-        if not job_id or not status_url:
-            raise TryOnServiceError("提交成功但未返回 jobId/statusUrl")
-        return job_id, status_url
+        resp = await client.post(policy["upload_host"], files=files)
+    if resp.status_code != 200:
+        raise TryOnServiceError(f"上传文件失败: HTTP {resp.status_code} {resp.text}")
+    return f"oss://{key}"
 
 
-async def _poll_status(status_url: str, max_wait: int = 180, interval: float = 2.0) -> Dict[str, Any]:
-    url = status_url if status_url.startswith("http") else f"{TRYON_API_URL.rstrip('/')}{status_url}"
-    headers = {"Authorization": f"Bearer {TRYON_API_KEY}"}
+async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment_url: str) -> str:
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis"
+    headers = {
+        "Authorization": f"Bearer {_get_api_key()}",
+        "Content-Type": "application/json",
+        "X-DashScope-Async": "enable",
+        "X-DashScope-OssResourceResolve": "enable",
+    }
+    payload = {
+        "model": TRYON_MODEL,
+        "input": {
+            "person_image_url": person_url,
+            "top_garment_url": garment_url,
+        },
+        "parameters": {
+            "resolution": -1,
+            "restore_face": True,
+        },
+    }
+    resp = await client.post(url, headers=headers, json=payload)
+    if resp.status_code != 200:
+        raise TryOnServiceError(f"创建试衣任务失败: HTTP {resp.status_code} {resp.text}")
+    output = (resp.json().get("output")) or {}
+    task_id = output.get("task_id")
+    status = output.get("task_status")
+    if not task_id:
+        raise TryOnServiceError(f"未返回 task_id: {resp.text}")
+    logger.info("Try-on task created task_id=%s status=%s", task_id, status)
+    return task_id
+
+
+async def _poll_task(task_id: str, interval: float = 3.0, timeout: int = 300) -> Dict[str, Any]:
+    url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+    headers = {"Authorization": f"Bearer {_get_api_key()}"}
     start = time.time()
     async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
             resp = await client.get(url, headers=headers)
-            if resp.status_code >= 400:
-                raise TryOnServiceError(f"查询失败：HTTP {resp.status_code} {resp.text}")
+            if resp.status_code != 200:
+                raise TryOnServiceError(f"查询任务失败: HTTP {resp.status_code} {resp.text}")
             data = resp.json()
-            status = data.get("status")
-            if status == "completed":
-                return data
-            if status == "failed":
-                raise TryOnServiceError(f"任务失败：{data.get('error') or data}")
-            if time.time() - start > max_wait:
+            output = data.get("output") or {}
+            status = output.get("task_status")
+            if status == "SUCCEEDED":
+                return output
+            if status in ("FAILED", "UNKNOWN", "CANCELED"):
+                raise TryOnServiceError(f"任务失败或异常: {status}, full: {data}")
+            if time.time() - start > timeout:
                 raise TryOnServiceError("等待超时，请稍后重试")
             await asyncio.sleep(interval)
 
@@ -65,8 +151,8 @@ async def _poll_status(status_url: str, max_wait: int = 180, interval: float = 2
 async def _download_image(url: str) -> bytes:
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.get(url)
-        if resp.status_code >= 400:
-            raise TryOnServiceError(f"下载结果失败：HTTP {resp.status_code}")
+        if resp.status_code != 200:
+            raise TryOnServiceError(f"下载结果失败: HTTP {resp.status_code}")
         return resp.content
 
 
@@ -77,40 +163,41 @@ async def generate_tryon_image(
     outfit_mime: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    调用第三方 try-on API，同步轮询返回结果，返回包含 base64 的 dict。
+    调用阿里云 DashScope OutfitAnyone，完成上传、提交、轮询并返回 base64 + 静态链接。
     """
-    job_id, status_url = await _submit_job(user_bytes, outfit_bytes, user_mime, outfit_mime)
-    logger.info("Try-on job submitted job_id=%s status_url=%s", job_id, status_url)
-    status = await _poll_status(status_url)
-    image_url = status.get("imageUrl")
-    image_b64 = status.get("imageBase64")
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        policy = await _get_upload_policy(client)
+    processed_person, person_mime = _prepare_image(user_bytes)
+    processed_garment, garment_mime = _prepare_image(outfit_bytes)
 
-    img_bytes: Optional[bytes] = None
-    if image_url:
-        img_bytes = await _download_image(image_url)
-    elif image_b64:
-        img_bytes = base64.b64decode(image_b64)
-    if not img_bytes:
-        raise TryOnServiceError("任务完成但未返回图片")
+    person_url = await _upload_to_oss(policy, "person.jpg", processed_person, person_mime)
+    garment_url = await _upload_to_oss(policy, "garment.jpg", processed_garment, garment_mime)
 
-    # 保存到本地文件，供前端直接访问
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        task_id = await _create_tryon_task(client, person_url, garment_url)
+    output = await _poll_task(task_id)
+    image_url = output.get("image_url")
+    if not image_url:
+        raise TryOnServiceError("任务成功但未返回 image_url")
+
+    img_bytes = await _download_image(image_url)
+
     result_dir = Path(TRYON_RESULT_DIR)
     result_dir.mkdir(parents=True, exist_ok=True)
-    file_path = result_dir / f"{job_id}.png"
+    file_path = result_dir / f"{task_id}.png"
     with file_path.open("wb") as f:
         f.write(img_bytes)
     try:
         static_url = f"/static/{file_path.relative_to(Path('static')).as_posix()}"
     except ValueError:
-        # 如果 TRYON_RESULT_DIR 不在 static 下，仍返回 None（前端已能用 base64）
         static_url = None
 
     image_b64 = base64.b64encode(img_bytes).decode("utf-8")
 
     return {
         "result_image_base64": image_b64,
-        "model": "tryon-api.com",
-        "prompt": "tryon-api.com external service",
-        "job_id": job_id,
-        "image_url": static_url,
+        "model": TRYON_MODEL,
+        "prompt": "dashscope outfitanyone",
+        "job_id": task_id,
+        "image_url": static_url or image_url,
     }

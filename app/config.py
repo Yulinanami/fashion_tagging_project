@@ -1,4 +1,13 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 自动加载项目根目录下的 .env（若存在）
+root_env = Path(__file__).resolve().parent.parent / ".env"
+if root_env.exists():
+    load_dotenv(dotenv_path=root_env)
+else:
+    load_dotenv()
 
 # 从环境变量里拿 key，也可以直接写死一个字符串
 # 默认值更新为用户提供的 Key，生产环境建议改为环境变量注入
@@ -9,9 +18,9 @@ MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME") or "gemini-2.5-flash-lite"
 # 换装模型（支持 image 输入与输出）
 TRYON_MODEL_NAME = os.environ.get("GEMINI_TRYON_MODEL_NAME") or "gemini-2.5-flash-image"
 
-# 外部换装 API（优先使用，避免模型配额限制）
-TRYON_API_URL = os.environ.get("TRYON_API_URL") or "https://tryon-api.com"
-TRYON_API_KEY = os.environ.get("TRYON_API_KEY") or "ta_3d2523e991944a8db823bebb6fb3754d"
+# 阿里云 DashScope（OutfitAnyone）换装配置
+DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("BAILIAN_API_KEY")
+TRYON_MODEL = os.environ.get("TRYON_MODEL") or "aitryon-plus"  # aitryon / aitryon-plus
 TRYON_RESULT_DIR = os.environ.get("TRYON_RESULT_DIR") or "static/tryon_results"
 
 DB_URL = os.environ.get("DB_URL") or "mysql+pymysql://root:20040129@localhost:3306/dresscode"
