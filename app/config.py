@@ -20,7 +20,7 @@ TRYON_MODEL_NAME = os.environ.get("GEMINI_TRYON_MODEL_NAME") or "gemini-2.5-flas
 
 # 阿里云 DashScope（OutfitAnyone）换装配置
 DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("BAILIAN_API_KEY")
-TRYON_MODEL = os.environ.get("TRYON_MODEL") or "aitryon-plus"  # aitryon / aitryon-plus
+TRYON_MODEL = os.environ.get("TRYON_MODEL") or "aitryon"  # aitryon / aitryon-plus
 TRYON_RESULT_DIR = os.environ.get("TRYON_RESULT_DIR") or "static/tryon_results"
 
 DB_URL = os.environ.get("DB_URL") or "mysql+pymysql://root:20040129@localhost:3306/dresscode"
