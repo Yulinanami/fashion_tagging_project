@@ -71,6 +71,7 @@ class OutfitOut(BaseModel):
     gender: str
     tags: OutfitTags
     images: List[str] = Field(default_factory=list, alias="images")
+    is_user_upload: bool = Field(False, alias="isUserUpload")
     is_favorite: bool = Field(False, alias="isFavorite")
 
     class Config:

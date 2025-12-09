@@ -4,15 +4,23 @@ import json
 import logging
 from typing import List, Optional, Set
 from pathlib import Path
+import time
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status, File, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Favorite, Outfit, User
 from app.schemas import OutfitOut, OutfitTags, PagedOutfits, ToggleFavoriteResponse
+from app.services.tagging import tag_image
+from app.services.renaming import build_new_name
+from PIL import Image
+import tempfile
+import shutil
+import os
 from app.routers.auth import _get_current_user
+from fastapi import status as http_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -49,6 +57,10 @@ def _collect_images(outfit_id: int, cover: Optional[str]) -> List[str]:
     return images
 
 
+def _is_user_upload(outfit: Outfit) -> bool:
+    return bool(outfit.image_url and "/user_uploads/" in outfit.image_url)
+
+
 def _serialize(outfit: Outfit, favorite_ids: Set[int]) -> OutfitOut:
     return OutfitOut(
         id=outfit.id,
@@ -57,8 +69,135 @@ def _serialize(outfit: Outfit, favorite_ids: Set[int]) -> OutfitOut:
         gender=outfit.gender,
         tags=_parse_tags(outfit.tags),
         images=_collect_images(outfit.id, outfit.image_url),
+        is_user_upload=_is_user_upload(outfit),
         is_favorite=outfit.id in favorite_ids,
     )
+
+
+@router.post("/outfits/upload", response_model=OutfitOut)
+async def upload_outfit(
+    file: UploadFile = File(..., description="穿搭图片"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_get_current_user),
+):
+    # 保存上传文件到静态目录
+    suffix = os.path.splitext(file.filename or "upload.jpg")[1] or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # 生成建议文件名
+        raw_tags = tag_image(tmp_path)
+        tags = _map_tags(raw_tags)
+        suggested_name = build_new_name(raw_tags, index=int(time.time()), ext=suffix.lower())
+        static_root = Path("static") / "outfits" / "user_uploads"
+        static_root.mkdir(parents=True, exist_ok=True)
+        target_path = static_root / suggested_name
+
+        # 保存为 JPEG 保证兼容
+        try:
+            img = Image.open(tmp_path).convert("RGB")
+            img.save(target_path, format="JPEG", quality=90)
+        except Exception:
+            shutil.copyfile(tmp_path, target_path)
+
+        # 入库
+        outfit = Outfit(
+            title=_build_title(tags, suggested_name.rsplit(".", 1)[0]),
+            image_url=f"/static/outfits/user_uploads/{target_path.name}",
+            gender=tags.get("gender") or "unisex",
+            tags=json.dumps(tags, ensure_ascii=False),
+            style=tags.get("style")[0] if tags.get("style") else None,
+            season=tags.get("season")[0] if tags.get("season") else None,
+            scene=tags.get("scene")[0] if tags.get("scene") else None,
+            weather=tags.get("weather")[0] if tags.get("weather") else None,
+        )
+        db.add(outfit)
+        db.commit()
+        db.refresh(outfit)
+        logger.info("用户上传穿搭 user_id=%s outfit_id=%s file=%s", current_user.id, outfit.id, target_path.name)
+        favorite_ids = {
+            row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
+        }
+        return _serialize(outfit, favorite_ids)
+    except Exception as exc:
+        logger.exception("上传穿搭失败: %s", exc)
+        raise HTTPException(status_code=500, detail={"code": "upload_failed", "message": str(exc)})
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def _map_tags(raw: dict) -> dict:
+    """将打标签结果映射为 UI 需要的字段"""
+    style = []
+    season = []
+    scene = []
+    weather = []
+    general = []
+    if isinstance(raw, dict):
+        if raw.get("overall_style"):
+            style.append(str(raw.get("overall_style")))
+        if raw.get("season"):
+            season.append(str(raw.get("season")))
+        occasions = raw.get("suitable_occasion")
+        if isinstance(occasions, list):
+            scene.extend([str(o) for o in occasions if o])
+        if raw.get("weather"):
+            weather.append(str(raw.get("weather")))
+        keywords = raw.get("fashion_keywords")
+        if isinstance(keywords, list):
+            general.extend([str(k) for k in keywords if k])
+        palette = raw.get("color_palette")
+        if isinstance(palette, list):
+            general.extend([str(c) for c in palette if c])
+    return {
+        "gender": raw.get("gender") if isinstance(raw, dict) else None,
+        "style": style,
+        "season": season,
+        "scene": scene,
+        "weather": weather,
+        "general": general,
+    }
+
+
+def _build_title(mapped_tags: dict, fallback: str) -> str:
+    parts: List[str] = []
+    gender = mapped_tags.get("gender")
+    if gender:
+        parts.append(str(gender))
+    for key in ("style", "scene", "season", "weather"):
+        values = mapped_tags.get(key) or []
+        if isinstance(values, list) and values:
+            parts.append(str(values[0]))
+    general = mapped_tags.get("general") or []
+    if isinstance(general, list) and general:
+        parts.append(str(general[0]))
+    title = "·".join([p for p in parts if p])
+    return title or fallback
+
+
+@router.delete("/outfits/{outfit_id}")
+def delete_outfit(
+    outfit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_get_current_user),
+):
+    outfit = db.query(Outfit).filter(Outfit.id == outfit_id).first()
+    if not outfit:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "穿搭不存在"})
+    if not _is_user_upload(outfit):
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail={"code": "forbidden", "message": "只能删除自己上传的穿搭"})
+    # 删除文件
+    if outfit.image_url and outfit.image_url.startswith("/static/"):
+        file_path = Path("static") / Path(outfit.image_url).relative_to("/static")
+        try:
+            file_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    db.delete(outfit)
+    db.commit()
+    return {"success": True}
 
 
 def _current_user_optional(
