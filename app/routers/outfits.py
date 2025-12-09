@@ -12,9 +12,17 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Favorite, Outfit, User
-from app.schemas import OutfitOut, OutfitTags, PagedOutfits, ToggleFavoriteResponse
+from app.schemas import (
+    OutfitOut,
+    OutfitRecommendation,
+    OutfitRecommendationRequest,
+    OutfitTags,
+    PagedOutfits,
+    ToggleFavoriteResponse,
+)
 from app.services.tagging import tag_image
 from app.services.renaming import build_new_name
+from app.services.llm_client import get_model
 from PIL import Image
 import tempfile
 import shutil
@@ -24,6 +32,7 @@ from fastapi import status as http_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+_recommendation_model = None
 
 
 def _parse_tags(raw: Optional[str]) -> OutfitTags:
@@ -72,6 +81,49 @@ def _serialize(outfit: Outfit, favorite_ids: Set[int]) -> OutfitOut:
         is_user_upload=_is_user_upload(outfit),
         is_favorite=outfit.id in favorite_ids,
     )
+
+
+def _get_recommendation_model():
+    global _recommendation_model
+    if _recommendation_model is None:
+        _recommendation_model = get_model()
+    return _recommendation_model
+
+
+def _temperature_bucket(temp: Optional[float]) -> str:
+    if temp is None:
+        return "mild"
+    if temp >= 28:
+        return "hot"
+    if temp <= 12:
+        return "cold"
+    return "mild"
+
+
+def _fallback_recommendation(
+    temp: Optional[float],
+    candidates: List[Outfit],
+) -> int:
+    """
+    简单按温度和季节匹配的兜底逻辑，优先用户上传。
+    """
+    bucket = _temperature_bucket(temp)
+    preferred_seasons = {
+        "hot": {"夏季", "春季", "四季"},
+        "cold": {"冬季", "秋季", "四季"},
+        "mild": {"春季", "秋季", "四季"},
+    }[bucket]
+
+    sorted_candidates = sorted(
+        candidates,
+        key=lambda o: (not _is_user_upload(o), o.id),
+    )
+    for outfit in sorted_candidates:
+        tags = _parse_tags(outfit.tags)
+        season_set = set(tags.season or [])
+        if season_set & preferred_seasons:
+            return outfit.id
+    return sorted_candidates[0].id if sorted_candidates else 0
 
 
 @router.post("/outfits/upload", response_model=OutfitOut)
@@ -286,6 +338,84 @@ def get_outfit(
             row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
         }
     return _serialize(outfit, favorite_ids)
+
+
+@router.post("/outfits/recommend", response_model=OutfitRecommendation)
+async def recommend_outfit(
+    payload: OutfitRecommendationRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(_current_user_optional),
+):
+    candidates: List[Outfit] = (
+        db.query(Outfit)
+        .order_by(Outfit.id.desc())
+        .limit(40)
+        .all()
+    )
+    if not candidates:
+        raise HTTPException(status_code=404, detail={"code": "no_outfit", "message": "暂无穿搭可推荐"})
+
+    favorite_ids: Set[int] = set()
+    if current_user:
+        favorite_ids = {
+            row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
+        }
+
+    candidate_payload = []
+    for outfit in candidates:
+        tags = _parse_tags(outfit.tags)
+        candidate_payload.append(
+            {
+                "id": outfit.id,
+                "title": outfit.title,
+                "gender": outfit.gender,
+                "style": tags.style,
+                "season": tags.season,
+                "scene": tags.scene,
+                "weather": tags.weather,
+                "general": tags.general,
+                "isUserUpload": _is_user_upload(outfit),
+            }
+        )
+
+    chosen_id: Optional[int] = None
+    reason = "基于当前天气的推荐"
+    candidate_ids = {item["id"] for item in candidate_payload}
+
+    try:
+        model = _get_recommendation_model()
+        prompt = (
+            "你是一个专业的穿搭推荐助手，根据当前天气从给定列表里选出最合适的一套，返回 JSON。"
+            f"城市: {payload.city or '未知'}；气温(°C): {payload.temperature if payload.temperature is not None else '未知'}；"
+            f"天气: {payload.weather_text or '未知'}。"
+            "候选穿搭列表（只能从这里选 id）："
+            f"{json.dumps(candidate_payload, ensure_ascii=False)}"
+            "请仅返回合法 JSON，如：{\"id\": 3, \"reason\": \"理由简短中文\"}，不要有额外文本。"
+            "偏好规则：高温(>=28°C)选夏季/清凉；低温(<=12°C)选秋冬/保暖；中温选春秋/四季；"
+            "若有用户上传的匹配项可优先考虑。"
+        )
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            raw = raw.replace("json", "", 1).strip()
+        data = json.loads(raw)
+        candidate_id = int(data.get("id"))
+        if candidate_id in candidate_ids:
+            chosen_id = candidate_id
+            reason = str(data.get("reason") or reason)
+    except Exception as exc:
+        logger.warning("LLM recommend failed: %s", exc)
+
+    if chosen_id is None:
+        chosen_id = _fallback_recommendation(payload.temperature, candidates)
+        reason = "根据温度的默认推荐"
+
+    chosen = next((c for c in candidates if c.id == chosen_id), candidates[0])
+    return OutfitRecommendation(
+        outfit=_serialize(chosen, favorite_ids),
+        reason=reason,
+    )
 
 
 @router.get("/favorites", response_model=List[OutfitOut])

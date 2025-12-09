@@ -96,6 +96,23 @@ class ToggleFavoriteResponse(BaseModel):
         allow_population_by_field_name = True
 
 
+class OutfitRecommendationRequest(BaseModel):
+    city: Optional[str] = None
+    temperature: Optional[float] = None
+    weather_text: Optional[str] = Field(None, alias="weatherText")
+
+    class Config:
+        allow_population_by_field_name = True
+
+
+class OutfitRecommendation(BaseModel):
+    outfit: OutfitOut
+    reason: str
+
+    class Config:
+        allow_population_by_field_name = True
+
+
 class TryOnResponse(BaseModel):
     job_id: str = Field(..., alias="jobId")
     result_image_base64: str = Field(..., alias="resultImageBase64")
