@@ -16,6 +16,7 @@ from fastapi import (
     UploadFile,
     Form,
 )
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,15 @@ def _get_recommendation_model():
     if _recommendation_model is None:
         _recommendation_model = get_model()
     return _recommendation_model
+
+
+def _save_user_upload_image(src: Path, dst: Path):
+    """将用户上传的图片转换为 JPEG 保存，必要时做直接拷贝兜底。"""
+    try:
+        with Image.open(src) as img:
+            img.convert("RGB").save(dst, format="JPEG", quality=90)
+    except Exception:
+        shutil.copyfile(src, dst)
 
 
 def _temperature_bucket(temp: Optional[float]) -> str:
@@ -107,7 +117,8 @@ async def upload_outfit(
 
     try:
         # 生成建议文件名
-        raw_tags = tag_image(tmp_path, model_name=model)
+        # 在后台线程调用打标签，避免阻塞事件循环
+        raw_tags = await run_in_threadpool(tag_image, tmp_path, model_name=model)
         tags = _map_tags(raw_tags)
         suggested_name = build_new_name(
             raw_tags, index=int(time.time()), ext=suffix.lower()
@@ -117,11 +128,7 @@ async def upload_outfit(
         target_path = static_root / suggested_name
 
         # 保存为 JPEG 保证兼容
-        try:
-            with Image.open(tmp_path) as img:
-                img.convert("RGB").save(target_path, format="JPEG", quality=90)
-        except Exception:
-            shutil.copyfile(tmp_path, target_path)
+        await run_in_threadpool(_save_user_upload_image, tmp_path, target_path)
 
         # 入库
         outfit = Outfit(
@@ -386,7 +393,8 @@ async def recommend_outfit(
             "偏好规则：高温(>=28°C)选夏季/清凉；低温(<=12°C)选秋冬/保暖；中温选春秋/四季；"
             "若有用户上传的匹配项可优先考虑。"
         )
-        response = model.generate_content(prompt)
+        # LLM 调用为阻塞型，同样放入线程池防止阻塞 event loop
+        response = await run_in_threadpool(model.generate_content, prompt)
         raw = response.text.strip()
         if raw.startswith("```"):
             raw = raw.strip("`")

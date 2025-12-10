@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 import httpx
 from PIL import Image
 from io import BytesIO
+from fastapi.concurrency import run_in_threadpool
 
 from app.config import DASHSCOPE_API_KEY, TRYON_MODEL, TRYON_RESULT_DIR
 
@@ -193,8 +194,12 @@ async def generate_tryon_image(
     logger.info("Try-on request using model=%s", model_name)
     async with httpx.AsyncClient(timeout=60.0) as client:
         policy = await _get_upload_policy(client, model_name)
-    processed_person, person_mime = _prepare_image(user_bytes)
-    processed_garment, garment_mime = _prepare_image(outfit_bytes)
+    processed_person, person_mime = await run_in_threadpool(
+        _prepare_image, user_bytes
+    )
+    processed_garment, garment_mime = await run_in_threadpool(
+        _prepare_image, outfit_bytes
+    )
 
     person_url = await _upload_to_oss(
         policy, "person.jpg", processed_person, person_mime

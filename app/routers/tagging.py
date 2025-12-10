@@ -4,6 +4,7 @@ import tempfile
 import logging
 
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from app.services.tagging import tag_image
 from app.services.renaming import build_new_name
@@ -31,7 +32,8 @@ async def tag_image_api(
         tmp_path = Path(tmp.name)
 
     try:
-        tags = tag_image(tmp_path, model_name=model)  # 直接复用打标签逻辑
+        # 在后台线程调用打标签，避免阻塞事件循环
+        tags = await run_in_threadpool(tag_image, tmp_path, model_name=model)  # 直接复用打标签逻辑
         logger.info(
             "Tag-image success filename=%s model=%s",
             file.filename,
@@ -67,7 +69,8 @@ async def tag_and_suggest_name_api(
         tmp_path = Path(tmp.name)
 
     try:
-        tags = tag_image(tmp_path, model_name=model)
+        # 在后台线程调用打标签，避免阻塞 event loop
+        tags = await run_in_threadpool(tag_image, tmp_path, model_name=model)
         suggested_name = build_new_name(tags, index=1, ext=suffix.lower())
         logger.info(
             "Tag-and-suggest success filename=%s model=%s suggested=%s",
