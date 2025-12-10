@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -35,6 +36,7 @@ class Outfit(Base):
     scene = Column(String(100), nullable=True)
     weather = Column(String(100), nullable=True)
     tags = Column(Text, nullable=True)  # JSON 字符串
+    is_user_upload = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

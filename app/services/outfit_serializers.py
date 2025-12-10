@@ -50,6 +50,10 @@ def collect_images(outfit_id: int, cover: Optional[str]) -> List[str]:
 
 
 def is_user_upload(outfit: Outfit) -> bool:
+    flag = getattr(outfit, "is_user_upload", None)
+    if flag is not None:
+        return bool(flag)
+    # 回退：兼容旧库，按路径判定
     return bool(outfit.image_url and "/user_uploads/" in outfit.image_url)
 
 

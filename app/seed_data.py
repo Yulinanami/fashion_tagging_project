@@ -177,6 +177,7 @@ def ensure_outfits_seeded(db: Session):
             scene=item.get("scene"),
             weather=item.get("weather"),
             tags=json.dumps(item.get("tags", {}), ensure_ascii=False),
+            is_user_upload=False,
         )
         db.add(outfit)
         inserted += 1

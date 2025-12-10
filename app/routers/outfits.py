@@ -128,6 +128,7 @@ async def upload_outfit(
             title=_build_title(tags, suggested_name.rsplit(".", 1)[0]),
             image_url=f"/static/outfits/user_uploads/{target_path.name}",
             gender=tags.get("gender") or "unisex",
+            is_user_upload=True,
             tags=json.dumps(tags, ensure_ascii=False),
             style=tags.get("style")[0] if tags.get("style") else None,
             season=tags.get("season")[0] if tags.get("season") else None,

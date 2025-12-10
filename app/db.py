@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -42,7 +42,34 @@ def init_db():
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_outfit_upload_flag()
     _seed()
+
+
+def _ensure_outfit_upload_flag():
+    """
+    旧库可能缺少 is_user_upload 字段，这里尝试补齐；若已存在则忽略。
+    """
+    inspector = inspect(engine)
+    try:
+        if not inspector.has_table("outfits"):
+            return
+        column_names = {col["name"] for col in inspector.get_columns("outfits")}
+        if "is_user_upload" in column_names:
+            return
+    except Exception:
+        # 如果元数据查询失败，直接跳过避免影响启动
+        return
+
+    ddl = "ALTER TABLE outfits ADD COLUMN is_user_upload BOOLEAN DEFAULT 0"
+    if engine.dialect.name == "mysql":
+        ddl = "ALTER TABLE outfits ADD COLUMN is_user_upload TINYINT(1) DEFAULT 0"
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(ddl))
+    except Exception:
+        # 如果添加失败（比如列已存在或权限不足），忽略，后续逻辑仍可运行
+        pass
 
 
 def _seed():
