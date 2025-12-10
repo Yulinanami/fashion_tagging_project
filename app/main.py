@@ -38,11 +38,14 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def on_startup():
-        init_db()
+        # 统一日志格式，强制覆盖 uvicorn 默认配置
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(name)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            force=True,
         )
+        init_db()
 
     return app
 

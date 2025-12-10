@@ -45,6 +45,7 @@ def tag_image(image_path: Path, model_name: str | None = None) -> dict:
     def _generate(active_model, active_name):
         return active_model.generate_content([FASHION_PROMPT, img]), active_name
 
+    logger.info("Tagging start file=%s model=%s", image_path.name, normalized_model)
     try:
         response, used_model = _generate(model, normalized_model)
     except ResourceExhausted as exc:
@@ -74,4 +75,10 @@ def tag_image(image_path: Path, model_name: str | None = None) -> dict:
         raise e
 
     data["_model_used"] = used_model
+    logger.info(
+        "Tagging done file=%s model=%s keys=%s",
+        image_path.name,
+        used_model,
+        list(data.keys()),
+    )
     return data

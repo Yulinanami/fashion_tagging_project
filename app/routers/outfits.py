@@ -47,14 +47,21 @@ from fastapi import status as http_status
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-_recommendation_model = None
+_recommendation_models: dict[str, tuple[object, str]] = {}
 
 
-def _get_recommendation_model():
-    global _recommendation_model
-    if _recommendation_model is None:
-        _recommendation_model = get_model()
-    return _recommendation_model
+def _get_recommendation_model(model_name: Optional[str] = None) -> tuple[object, str]:
+    key = (model_name or "").strip() or "default"
+    if key not in _recommendation_models:
+        model = get_model(model_name)
+        name = (
+            getattr(model, "model_name", None)
+            or getattr(model, "_model", None)
+            or model_name
+            or "unknown"
+        )
+        _recommendation_models[key] = (model, name)
+    return _recommendation_models[key]
 
 
 def _save_user_upload_image(src: Path, dst: Path):
@@ -382,7 +389,15 @@ async def recommend_outfit(
     candidate_ids = {item["id"] for item in candidate_payload}
 
     try:
-        model = _get_recommendation_model()
+        model, model_name_used = _get_recommendation_model(payload.model)
+        logger.info(
+            "Recommend start model=%s city=%s temp=%s weather=%s candidates=%d",
+            model_name_used,
+            payload.city,
+            payload.temperature,
+            payload.weather_text,
+            len(candidate_payload),
+        )
         prompt = (
             "你是一个专业的穿搭推荐助手，根据当前天气从给定列表里选出最合适的一套，返回 JSON。"
             f"城市: {payload.city or '未知'}；气温(°C): {payload.temperature if payload.temperature is not None else '未知'}；"
@@ -404,8 +419,15 @@ async def recommend_outfit(
         if candidate_id in candidate_ids:
             chosen_id = candidate_id
             reason = str(data.get("reason") or reason)
+            logger.info(
+                "Recommend success model=%s chosen_id=%s",
+                model_name_used,
+                chosen_id,
+            )
     except Exception as exc:
-        logger.warning("LLM recommend failed: %s", exc)
+        logger.warning(
+            "LLM recommend failed model=%s: %s", model_name_used, exc
+        )
 
     if chosen_id is None:
         chosen_id = _fallback_recommendation(payload.temperature, candidates)

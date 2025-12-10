@@ -89,6 +89,7 @@ class OutfitRecommendationRequest(BaseModel):
     city: Optional[str] = None
     temperature: Optional[float] = None
     weather_text: Optional[str] = Field(None, alias="weatherText")
+    model: Optional[str] = None
 
     class Config:
         allow_population_by_field_name = True
