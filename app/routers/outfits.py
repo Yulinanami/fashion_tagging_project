@@ -9,7 +9,6 @@ import time
 from fastapi import (
     APIRouter,
     Depends,
-    Header,
     HTTPException,
     Query,
     status,
@@ -42,7 +41,7 @@ from google.api_core.exceptions import ResourceExhausted
 import tempfile
 import shutil
 import os
-from app.routers.auth import _get_current_user
+from app.routers.auth import _get_current_user, _get_current_user_optional
 from fastapi import status as http_status
 
 router = APIRouter()
@@ -251,18 +250,6 @@ def delete_outfit(
     return {"success": True}
 
 
-def _current_user_optional(
-    authorization: Optional[str] = Header(default=None),
-    db: Session = Depends(get_db),
-) -> Optional[User]:
-    if not authorization:
-        return None
-    try:
-        return _get_current_user(authorization=authorization, db=db)
-    except HTTPException:
-        return None
-
-
 @router.get("/outfits", response_model=PagedOutfits)
 def list_outfits(
     page: int = Query(1, ge=1),
@@ -275,7 +262,7 @@ def list_outfits(
     tags: Optional[str] = None,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(_current_user_optional),
+    current_user: Optional[User] = Depends(_get_current_user_optional),
 ):
     query = db.query(Outfit)
     if gender:
@@ -323,7 +310,7 @@ def list_outfits(
 def get_outfit(
     outfit_id: int,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(_current_user_optional),
+    current_user: Optional[User] = Depends(_get_current_user_optional),
 ):
     outfit = db.query(Outfit).filter(Outfit.id == outfit_id).first()
     if not outfit:
@@ -346,7 +333,7 @@ def get_outfit(
 async def recommend_outfit(
     payload: OutfitRecommendationRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(_current_user_optional),
+    current_user: Optional[User] = Depends(_get_current_user_optional),
 ):
     candidates: List[Outfit] = (
         db.query(Outfit).order_by(Outfit.id.desc()).limit(40).all()
