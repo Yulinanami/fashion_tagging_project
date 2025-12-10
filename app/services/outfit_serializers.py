@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import List, Optional, Set
 
-from app.models import Favorite, Outfit
+from app.models import Outfit
 from app.schemas import OutfitOut, OutfitTags
 
 
