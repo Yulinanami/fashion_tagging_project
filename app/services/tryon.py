@@ -105,11 +105,28 @@ async def _upload_to_oss(
         "success_action_status": (None, "200"),
         "file": (file_name, data, mime or "image/jpeg"),
     }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(policy["upload_host"], files=files)
-    if resp.status_code != 200:
-        raise TryOnServiceError(f"上传文件失败: HTTP {resp.status_code} {resp.text}")
-    return f"oss://{key}"
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                resp = await client.post(policy["upload_host"], files=files)
+            if resp.status_code != 200:
+                raise TryOnServiceError(
+                    f"上传文件失败: HTTP {resp.status_code} {resp.text}"
+                )
+            return f"oss://{key}"
+        except httpx.HTTPError as exc:
+            last_error = exc
+            logger.warning("Upload to OSS failed (attempt %s): %s", attempt + 1, exc)
+            if attempt == 0:
+                await asyncio.sleep(1.0)
+                continue
+            raise TryOnServiceError(f"上传文件失败，网络不稳定或超时：{exc}") from exc
+        except Exception:
+            raise
+    if last_error:
+        raise TryOnServiceError(f"上传文件失败：{last_error}") from last_error
+    raise TryOnServiceError("上传文件失败：未知错误")
 
 
 async def _create_tryon_task(
@@ -194,9 +211,7 @@ async def generate_tryon_image(
     logger.info("Try-on request using model=%s", model_name)
     async with httpx.AsyncClient(timeout=60.0) as client:
         policy = await _get_upload_policy(client, model_name)
-    processed_person, person_mime = await run_in_threadpool(
-        _prepare_image, user_bytes
-    )
+    processed_person, person_mime = await run_in_threadpool(_prepare_image, user_bytes)
     processed_garment, garment_mime = await run_in_threadpool(
         _prepare_image, outfit_bytes
     )
