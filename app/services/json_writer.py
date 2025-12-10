@@ -4,8 +4,7 @@ from typing import Any, Dict, List
 
 
 def append_record_to_json(
-    record: Dict[str, Any],
-    json_path: str = "metadata/dataset.json"
+    record: Dict[str, Any], json_path: str = "metadata/dataset.json"
 ) -> None:
     """
     将一条记录追加写入到一个 JSON 文件中。

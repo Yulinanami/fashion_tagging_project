@@ -3,10 +3,19 @@ from __future__ import annotations
 import json
 import logging
 from typing import List, Optional, Set
-from pathlib import Path
 import time
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status, File, UploadFile, Form
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    status,
+    File,
+    UploadFile,
+    Form,
+)
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -16,13 +25,17 @@ from app.schemas import (
     OutfitOut,
     OutfitRecommendation,
     OutfitRecommendationRequest,
-    OutfitTags,
     PagedOutfits,
     ToggleFavoriteResponse,
 )
 from app.services.tagging import tag_image
 from app.services.renaming import build_new_name
 from app.services.llm_client import get_model
+from app.services.outfit_serializers import (
+    parse_tags,
+    is_user_upload,
+    serialize_outfit,
+)
 from PIL import Image
 from google.api_core.exceptions import ResourceExhausted
 import tempfile
@@ -34,54 +47,6 @@ from fastapi import status as http_status
 router = APIRouter()
 logger = logging.getLogger(__name__)
 _recommendation_model = None
-
-
-def _parse_tags(raw: Optional[str]) -> OutfitTags:
-    if not raw:
-        return OutfitTags()
-    try:
-        data = json.loads(raw)
-        return OutfitTags(**{**OutfitTags().model_dump(), **data})
-    except Exception:
-        # 兼容非 JSON 的字符串 tags（按逗号切分作为 general）
-        items = [item.strip() for item in raw.split(",") if item.strip()]
-        return OutfitTags(general=items)
-
-
-def _collect_images(outfit_id: int, cover: Optional[str]) -> List[str]:
-    """收集静态目录中的多张穿搭图片，约定文件名为 outfit_<id>_<数字>.*"""
-    images: List[str] = []
-    if cover:
-        images.append(cover)
-    pattern_root = Path("static") / "outfits"
-    if pattern_root.exists():
-        for path in sorted(pattern_root.glob(f"outfit_{outfit_id}_*")):
-            # 仅保留后缀为数字的文件，避免同图别名重复
-            stem = path.stem
-            suffix_part = stem.split("_")[-1]
-            if not suffix_part.isdigit():
-                continue
-            url = f"/static/outfits/{path.name}"
-            if url not in images:
-                images.append(url)
-    return images
-
-
-def _is_user_upload(outfit: Outfit) -> bool:
-    return bool(outfit.image_url and "/user_uploads/" in outfit.image_url)
-
-
-def _serialize(outfit: Outfit, favorite_ids: Set[int]) -> OutfitOut:
-    return OutfitOut(
-        id=outfit.id,
-        title=outfit.title,
-        image_url=outfit.image_url,
-        gender=outfit.gender,
-        tags=_parse_tags(outfit.tags),
-        images=_collect_images(outfit.id, outfit.image_url),
-        is_user_upload=_is_user_upload(outfit),
-        is_favorite=outfit.id in favorite_ids,
-    )
 
 
 def _get_recommendation_model():
@@ -117,10 +82,10 @@ def _fallback_recommendation(
 
     sorted_candidates = sorted(
         candidates,
-        key=lambda o: (not _is_user_upload(o), o.id),
+        key=lambda o: (not is_user_upload(o), o.id),
     )
     for outfit in sorted_candidates:
-        tags = _parse_tags(outfit.tags)
+        tags = parse_tags(outfit.tags)
         season_set = set(tags.season or [])
         if season_set & preferred_seasons:
             return outfit.id
@@ -144,7 +109,9 @@ async def upload_outfit(
         # 生成建议文件名
         raw_tags = tag_image(tmp_path, model_name=model)
         tags = _map_tags(raw_tags)
-        suggested_name = build_new_name(raw_tags, index=int(time.time()), ext=suffix.lower())
+        suggested_name = build_new_name(
+            raw_tags, index=int(time.time()), ext=suffix.lower()
+        )
         static_root = Path("static") / "outfits" / "user_uploads"
         static_root.mkdir(parents=True, exist_ok=True)
         target_path = static_root / suggested_name
@@ -170,20 +137,37 @@ async def upload_outfit(
         db.add(outfit)
         db.commit()
         db.refresh(outfit)
-        logger.info("用户上传穿搭 user_id=%s outfit_id=%s file=%s", current_user.id, outfit.id, target_path.name)
+        logger.info(
+            "用户上传穿搭 user_id=%s outfit_id=%s file=%s",
+            current_user.id,
+            outfit.id,
+            target_path.name,
+        )
         favorite_ids = {
-            row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
+            row.outfit_id
+            for row in db.query(Favorite.outfit_id).filter(
+                Favorite.user_id == current_user.id
+            )
         }
-        return _serialize(outfit, favorite_ids)
+        return serialize_outfit(outfit, favorite_ids)
     except ResourceExhausted as exc:
-        logger.warning("Upload outfit tagging quota exhausted model=%s: %s", model or "default", exc)
+        logger.warning(
+            "Upload outfit tagging quota exhausted model=%s: %s",
+            model or "default",
+            exc,
+        )
         raise HTTPException(
             status_code=http_status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"code": "tagging_quota_exceeded", "message": "打标签服务配额不足，请稍后重试或切换模型"},
+            detail={
+                "code": "tagging_quota_exceeded",
+                "message": "打标签服务配额不足，请稍后重试或切换模型",
+            },
         )
     except Exception as exc:
         logger.exception("上传穿搭失败: %s", exc)
-        raise HTTPException(status_code=500, detail={"code": "upload_failed", "message": str(exc)})
+        raise HTTPException(
+            status_code=500, detail={"code": "upload_failed", "message": str(exc)}
+        )
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -245,9 +229,15 @@ def delete_outfit(
 ):
     outfit = db.query(Outfit).filter(Outfit.id == outfit_id).first()
     if not outfit:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "穿搭不存在"})
-    if not _is_user_upload(outfit):
-        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail={"code": "forbidden", "message": "只能删除自己上传的穿搭"})
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "穿搭不存在"},
+        )
+    if not is_user_upload(outfit):
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "只能删除自己上传的穿搭"},
+        )
     # 删除文件
     if outfit.image_url and outfit.image_url.startswith("/static/"):
         file_path = Path("static") / Path(outfit.image_url).relative_to("/static")
@@ -302,25 +292,25 @@ def list_outfits(
             query = query.filter(Outfit.tags.ilike(f"%{tag}%"))
     if q:
         pattern = f"%{q}%"
-        query = query.filter(or_(Outfit.title.ilike(pattern), Outfit.tags.ilike(pattern)))
+        query = query.filter(
+            or_(Outfit.title.ilike(pattern), Outfit.tags.ilike(pattern))
+        )
 
     total = query.count()
-    items = (
-        query.order_by(Outfit.id.asc())
-        .offset((page - 1) * size)
-        .limit(size)
-        .all()
-    )
+    items = query.order_by(Outfit.id.asc()).offset((page - 1) * size).limit(size).all()
 
     favorite_ids: Set[int] = set()
     if current_user:
         favorite_ids = {
-            row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
+            row.outfit_id
+            for row in db.query(Favorite.outfit_id).filter(
+                Favorite.user_id == current_user.id
+            )
         }
 
     return PagedOutfits.model_validate(
         {
-            "items": [_serialize(item, favorite_ids) for item in items],
+            "items": [serialize_outfit(item, favorite_ids) for item in items],
             "page": page,
             "pageSize": size,
             "total": total,
@@ -343,9 +333,12 @@ def get_outfit(
     favorite_ids: Set[int] = set()
     if current_user:
         favorite_ids = {
-            row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
+            row.outfit_id
+            for row in db.query(Favorite.outfit_id).filter(
+                Favorite.user_id == current_user.id
+            )
         }
-    return _serialize(outfit, favorite_ids)
+    return serialize_outfit(outfit, favorite_ids)
 
 
 @router.post("/outfits/recommend", response_model=OutfitRecommendation)
@@ -355,23 +348,25 @@ async def recommend_outfit(
     current_user: Optional[User] = Depends(_current_user_optional),
 ):
     candidates: List[Outfit] = (
-        db.query(Outfit)
-        .order_by(Outfit.id.desc())
-        .limit(40)
-        .all()
+        db.query(Outfit).order_by(Outfit.id.desc()).limit(40).all()
     )
     if not candidates:
-        raise HTTPException(status_code=404, detail={"code": "no_outfit", "message": "暂无穿搭可推荐"})
+        raise HTTPException(
+            status_code=404, detail={"code": "no_outfit", "message": "暂无穿搭可推荐"}
+        )
 
     favorite_ids: Set[int] = set()
     if current_user:
         favorite_ids = {
-            row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
+            row.outfit_id
+            for row in db.query(Favorite.outfit_id).filter(
+                Favorite.user_id == current_user.id
+            )
         }
 
     candidate_payload = []
     for outfit in candidates:
-        tags = _parse_tags(outfit.tags)
+        tags = parse_tags(outfit.tags)
         candidate_payload.append(
             {
                 "id": outfit.id,
@@ -382,7 +377,7 @@ async def recommend_outfit(
                 "scene": tags.scene,
                 "weather": tags.weather,
                 "general": tags.general,
-                "isUserUpload": _is_user_upload(outfit),
+                "isUserUpload": is_user_upload(outfit),
             }
         )
 
@@ -398,7 +393,7 @@ async def recommend_outfit(
             f"天气: {payload.weather_text or '未知'}。"
             "候选穿搭列表（只能从这里选 id）："
             f"{json.dumps(candidate_payload, ensure_ascii=False)}"
-            "请仅返回合法 JSON，如：{\"id\": 3, \"reason\": \"理由简短中文\"}，不要有额外文本。"
+            '请仅返回合法 JSON，如：{"id": 3, "reason": "理由简短中文"}，不要有额外文本。'
             "偏好规则：高温(>=28°C)选夏季/清凉；低温(<=12°C)选秋冬/保暖；中温选春秋/四季；"
             "若有用户上传的匹配项可优先考虑。"
         )
@@ -421,7 +416,7 @@ async def recommend_outfit(
 
     chosen = next((c for c in candidates if c.id == chosen_id), candidates[0])
     return OutfitRecommendation(
-        outfit=_serialize(chosen, favorite_ids),
+        outfit=serialize_outfit(chosen, favorite_ids),
         reason=reason,
     )
 
@@ -439,7 +434,7 @@ def list_favorites(
         .all()
     )
     favorite_ids = {row.id for row in favorites}
-    return [_serialize(item, favorite_ids) for item in favorites]
+    return [serialize_outfit(item, favorite_ids) for item in favorites]
 
 
 @router.post("/favorites/{outfit_id}", response_model=ToggleFavoriteResponse)

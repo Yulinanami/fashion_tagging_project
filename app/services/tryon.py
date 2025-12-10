@@ -35,7 +35,9 @@ def _normalize_model(model: Optional[str]) -> str:
     return name
 
 
-def _prepare_image(data: bytes, max_side: int = 4000, min_side: int = 150) -> tuple[bytes, str]:
+def _prepare_image(
+    data: bytes, max_side: int = 4000, min_side: int = 150
+) -> tuple[bytes, str]:
     """
     确保图片分辨率满足接口要求：最长边 < max_side，最短边 > min_side，大小 < 5MB。
     返回 (bytes, mime)
@@ -82,11 +84,15 @@ async def _get_upload_policy(client: httpx.AsyncClient, model: str) -> Dict[str,
     params = {"action": "getPolicy", "model": model}
     resp = await client.get(url, headers=headers, params=params)
     if resp.status_code != 200:
-        raise TryOnServiceError(f"获取上传凭证失败: HTTP {resp.status_code} {resp.text}")
+        raise TryOnServiceError(
+            f"获取上传凭证失败: HTTP {resp.status_code} {resp.text}"
+        )
     return resp.json().get("data") or {}
 
 
-async def _upload_to_oss(policy: Dict[str, Any], file_name: str, data: bytes, mime: Optional[str]) -> str:
+async def _upload_to_oss(
+    policy: Dict[str, Any], file_name: str, data: bytes, mime: Optional[str]
+) -> str:
     key = f"{policy['upload_dir']}/{file_name}"
     files = {
         "OSSAccessKeyId": (None, policy["oss_access_key_id"]),
@@ -105,7 +111,9 @@ async def _upload_to_oss(policy: Dict[str, Any], file_name: str, data: bytes, mi
     return f"oss://{key}"
 
 
-async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment_url: str, model: str) -> str:
+async def _create_tryon_task(
+    client: httpx.AsyncClient, person_url: str, garment_url: str, model: str
+) -> str:
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis"
     headers = {
         "Authorization": f"Bearer {_get_api_key()}",
@@ -126,7 +134,9 @@ async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment
     }
     resp = await client.post(url, headers=headers, json=payload)
     if resp.status_code != 200:
-        raise TryOnServiceError(f"创建试衣任务失败: HTTP {resp.status_code} {resp.text}")
+        raise TryOnServiceError(
+            f"创建试衣任务失败: HTTP {resp.status_code} {resp.text}"
+        )
     output = (resp.json().get("output")) or {}
     task_id = output.get("task_id")
     status = output.get("task_status")
@@ -136,7 +146,9 @@ async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment
     return task_id
 
 
-async def _poll_task(task_id: str, interval: float = 3.0, timeout: int = 300) -> Dict[str, Any]:
+async def _poll_task(
+    task_id: str, interval: float = 3.0, timeout: int = 300
+) -> Dict[str, Any]:
     url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
     headers = {"Authorization": f"Bearer {_get_api_key()}"}
     start = time.time()
@@ -144,7 +156,9 @@ async def _poll_task(task_id: str, interval: float = 3.0, timeout: int = 300) ->
         while True:
             resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
-                raise TryOnServiceError(f"查询任务失败: HTTP {resp.status_code} {resp.text}")
+                raise TryOnServiceError(
+                    f"查询任务失败: HTTP {resp.status_code} {resp.text}"
+                )
             data = resp.json()
             output = data.get("output") or {}
             status = output.get("task_status")
@@ -182,8 +196,12 @@ async def generate_tryon_image(
     processed_person, person_mime = _prepare_image(user_bytes)
     processed_garment, garment_mime = _prepare_image(outfit_bytes)
 
-    person_url = await _upload_to_oss(policy, "person.jpg", processed_person, person_mime)
-    garment_url = await _upload_to_oss(policy, "garment.jpg", processed_garment, garment_mime)
+    person_url = await _upload_to_oss(
+        policy, "person.jpg", processed_person, person_mime
+    )
+    garment_url = await _upload_to_oss(
+        policy, "garment.jpg", processed_garment, garment_mime
+    )
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         task_id = await _create_tryon_task(client, person_url, garment_url, model_name)

@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 
 from app.db import Base
 
@@ -36,11 +44,13 @@ class Outfit(Base):
 
 class Favorite(Base):
     __tablename__ = "favorites"
-    __table_args__ = (
-        UniqueConstraint("user_id", "outfit_id", name="uq_user_outfit"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "outfit_id", name="uq_user_outfit"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    outfit_id = Column(Integer, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    outfit_id = Column(
+        Integer, ForeignKey("outfits.id", ondelete="CASCADE"), nullable=False
+    )
     created_at = Column(DateTime, default=datetime.utcnow)

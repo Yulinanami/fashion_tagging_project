@@ -9,28 +9,32 @@ if root_env.exists():
 else:
     load_dotenv()
 
-# 从环境变量里拿 key，也可以直接写死一个字符串
-# 默认值更新为用户提供的 Key，生产环境建议改为环境变量注入
-API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyD0p3tTZH0HdDD0pt8zGTDLpOCa8xNZQrE"
+
+def env(name: str, default=None):
+    return os.environ.get(name, default)
+
+
+# 关键 Key 不再硬编码默认值，改为依赖 .env / 环境变量注入
+API_KEY = env("GEMINI_API_KEY")
 
 # 标注/标签生成模型
-MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME") or "gemini-2.5-flash"
+MODEL_NAME = env("GEMINI_MODEL_NAME", "gemini-2.5-flash")
 # 换装模型（支持 image 输入与输出）
-TRYON_MODEL_NAME = os.environ.get("GEMINI_TRYON_MODEL_NAME") or "gemini-2.5-flash-image"
+TRYON_MODEL_NAME = env("GEMINI_TRYON_MODEL_NAME", "gemini-2.5-flash-image")
 
 # 阿里云 DashScope（OutfitAnyone）换装配置
-DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("BAILIAN_API_KEY")
-TRYON_MODEL = os.environ.get("TRYON_MODEL") or "aitryon"  # aitryon / aitryon-plus
-TRYON_RESULT_DIR = os.environ.get("TRYON_RESULT_DIR") or "static/tryon_results"
+DASHSCOPE_API_KEY = env("DASHSCOPE_API_KEY") or env("BAILIAN_API_KEY")
+TRYON_MODEL = env("TRYON_MODEL", "aitryon")  # aitryon / aitryon-plus
+TRYON_RESULT_DIR = env("TRYON_RESULT_DIR", "static/tryon_results")
 
-DB_URL = os.environ.get("DB_URL") or "mysql+pymysql://root:20040129@localhost:3306/dresscode"
+DB_URL = env("DB_URL", "sqlite:///./dresscode.db")
 
-QWEATHER_HOST = os.environ.get("QWEATHER_HOST") or "m36x88fbn7.re.qweatherapi.com"
-QWEATHER_KEY = os.environ.get("QWEATHER_KEY") or "95bedf0eed2945ffb7b3450f583136cf"
-QWEATHER_LANG = os.environ.get("QWEATHER_LANG") or "zh-hans"
-QWEATHER_UNIT = os.environ.get("QWEATHER_UNIT") or "m"
-QWEATHER_TIMEOUT = float(os.environ.get("QWEATHER_TIMEOUT") or 6.0)
-QWEATHER_CACHE_SECONDS = int(os.environ.get("QWEATHER_CACHE_SECONDS") or 300)
+QWEATHER_HOST = env("QWEATHER_HOST", "m36x88fbn7.re.qweatherapi.com")
+QWEATHER_KEY = env("QWEATHER_KEY")
+QWEATHER_LANG = env("QWEATHER_LANG", "zh-hans")
+QWEATHER_UNIT = env("QWEATHER_UNIT", "m")
+QWEATHER_TIMEOUT = float(env("QWEATHER_TIMEOUT", 6.0))
+QWEATHER_CACHE_SECONDS = int(env("QWEATHER_CACHE_SECONDS", 300))
 
 FASHION_PROMPT = """
 你是一个专业的时尚图像标注助手，请对给定的穿搭图片进行结构化标签标注。

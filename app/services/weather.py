@@ -42,7 +42,10 @@ async def _get_json(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         raise HTTPException(
             status_code=502,
-            detail={"code": "weather_parse_error", "message": "天气服务返回内容无法解析"},
+            detail={
+                "code": "weather_parse_error",
+                "message": "天气服务返回内容无法解析",
+            },
         )
     if data.get("code") != "200":
         detail_msg = data.get("message") or data.get("fxLink") or str(data.get("code"))
@@ -90,9 +93,7 @@ async def _resolve_location(
         locations = lookup.get("location") or []
         best_match = locations[0] if locations else {}
         resolved_id = (
-            best_match.get("id")
-            or best_match.get("locationId")
-            or f"{lon},{lat}"
+            best_match.get("id") or best_match.get("locationId") or f"{lon},{lat}"
         )
         return resolved_id, {
             "name": best_match.get("name") or city or f"{lat},{lon}",
@@ -155,13 +156,13 @@ async def fetch_weather_now(
     resolved_lat = location.get("lat") or (str(lat) if lat is not None else None)
     resolved_lon = location.get("lon") or (str(lon) if lon is not None else None)
     resolved_location_id = (
-        location.get("id")
-        or location.get("locationId")
-        or resolved_id
+        location.get("id") or location.get("locationId") or resolved_id
     )
     result = {
         "city": resolved_city,
-        "admin_area": location.get("adm1") or location.get("adm2") or location.get("country"),
+        "admin_area": location.get("adm1")
+        or location.get("adm2")
+        or location.get("country"),
         "location_id": resolved_location_id,
         "lat": resolved_lat,
         "lon": resolved_lon,

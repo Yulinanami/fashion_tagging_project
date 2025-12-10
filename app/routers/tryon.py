@@ -13,14 +13,22 @@ logger = logging.getLogger(__name__)
 async def try_on(
     user_image: UploadFile = File(..., description="用户人像"),
     outfit_image: UploadFile = File(..., description="穿搭/衣物图片"),
-    model: str | None = Form(default=None, description="换装模型，如 aitryon / aitryon-plus"),
+    model: str | None = Form(
+        default=None, description="换装模型，如 aitryon / aitryon-plus"
+    ),
 ):
     user_bytes = await user_image.read()
     outfit_bytes = await outfit_image.read()
     if not user_bytes:
-        raise HTTPException(status_code=400, detail={"code": "user_image_missing", "message": "人像为空"})
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "user_image_missing", "message": "人像为空"},
+        )
     if not outfit_bytes:
-        raise HTTPException(status_code=400, detail={"code": "outfit_image_missing", "message": "穿搭图为空"})
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "outfit_image_missing", "message": "穿搭图为空"},
+        )
 
     try:
         result = await generate_tryon_image(

@@ -113,11 +113,7 @@ def me(current_user: User = Depends(_get_current_user)):
 
 @router.post("/auth/refresh", response_model=AuthResponse)
 def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
-    user = (
-        db.query(User)
-        .filter(User.refresh_token == payload.refresh_token)
-        .first()
-    )
+    user = db.query(User).filter(User.refresh_token == payload.refresh_token).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

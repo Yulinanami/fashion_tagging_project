@@ -51,7 +51,11 @@ def tag_image(image_path: Path, model_name: str | None = None) -> dict:
         # 自动降级到 lite，避免配额导致整体失败
         fallback = "gemini-2.5-flash-lite"
         if normalized_model != fallback and fallback in SUPPORTED_TAGGING_MODELS:
-            logger.warning("Primary model %s quota exhausted, fallback to %s", normalized_model, fallback)
+            logger.warning(
+                "Primary model %s quota exhausted, fallback to %s",
+                normalized_model,
+                fallback,
+            )
             response, used_model = _generate(get_or_create_model(fallback), fallback)
         else:
             raise exc

@@ -13,9 +13,9 @@ def safe_str(s) -> str:
         s = str(s)
 
     s = s.strip()
-    for ch in ['/', '\\', ':', '*', '?', '"', '<', '>', '|', ',', '，']:
-        s = s.replace(ch, '')
-    s = s.replace(' ', '-')
+    for ch in ["/", "\\", ":", "*", "?", '"', "<", ">", "|", ",", "，"]:
+        s = s.replace(ch, "")
+    s = s.replace(" ", "-")
     return s
 
 
@@ -52,8 +52,7 @@ def build_new_name(tags: dict, index: int, ext: str) -> str:
 
 
 def batch_tag_and_rename(
-    src_dir: str = "images/to_rename",
-    dst_dir: str = "images/renamed"
+    src_dir: str = "images/to_rename", dst_dir: str = "images/renamed"
 ):
     """
     遍历 src_dir，对每张图片打标签并重命名复制到 dst_dir，
@@ -64,7 +63,8 @@ def batch_tag_and_rename(
     dst.mkdir(parents=True, exist_ok=True)
 
     image_files = [
-        p for p in src.iterdir()
+        p
+        for p in src.iterdir()
         if p.suffix.lower() in [".jpg", ".jpeg", ".png", ".webp"]
     ]
 
