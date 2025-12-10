@@ -14,6 +14,7 @@ from io import BytesIO
 from app.config import DASHSCOPE_API_KEY, TRYON_MODEL, TRYON_RESULT_DIR
 
 logger = logging.getLogger(__name__)
+SUPPORTED_TRYON_MODELS = {"aitryon", "aitryon-plus"}
 
 
 class TryOnServiceError(RuntimeError):
@@ -24,6 +25,14 @@ def _get_api_key() -> str:
     if not DASHSCOPE_API_KEY:
         raise TryOnServiceError("未配置 DASHSCOPE_API_KEY")
     return DASHSCOPE_API_KEY
+
+
+def _normalize_model(model: Optional[str]) -> str:
+    name = (model or TRYON_MODEL).strip() or TRYON_MODEL
+    if name not in SUPPORTED_TRYON_MODELS:
+        logger.warning("Unsupported try-on model %s, fallback to %s", name, TRYON_MODEL)
+        return TRYON_MODEL
+    return name
 
 
 def _prepare_image(data: bytes, max_side: int = 4000, min_side: int = 150) -> tuple[bytes, str]:
@@ -64,13 +73,13 @@ def _prepare_image(data: bytes, max_side: int = 4000, min_side: int = 150) -> tu
     return buffer.read(), "image/jpeg"
 
 
-async def _get_upload_policy(client: httpx.AsyncClient) -> Dict[str, Any]:
+async def _get_upload_policy(client: httpx.AsyncClient, model: str) -> Dict[str, Any]:
     url = "https://dashscope.aliyuncs.com/api/v1/uploads"
     headers = {
         "Authorization": f"Bearer {_get_api_key()}",
         "Content-Type": "application/json",
     }
-    params = {"action": "getPolicy", "model": TRYON_MODEL}
+    params = {"action": "getPolicy", "model": model}
     resp = await client.get(url, headers=headers, params=params)
     if resp.status_code != 200:
         raise TryOnServiceError(f"获取上传凭证失败: HTTP {resp.status_code} {resp.text}")
@@ -96,7 +105,7 @@ async def _upload_to_oss(policy: Dict[str, Any], file_name: str, data: bytes, mi
     return f"oss://{key}"
 
 
-async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment_url: str) -> str:
+async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment_url: str, model: str) -> str:
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis"
     headers = {
         "Authorization": f"Bearer {_get_api_key()}",
@@ -105,7 +114,7 @@ async def _create_tryon_task(client: httpx.AsyncClient, person_url: str, garment
         "X-DashScope-OssResourceResolve": "enable",
     }
     payload = {
-        "model": TRYON_MODEL,
+        "model": model,
         "input": {
             "person_image_url": person_url,
             "top_garment_url": garment_url,
@@ -161,12 +170,15 @@ async def generate_tryon_image(
     outfit_bytes: bytes,
     user_mime: Optional[str] = None,
     outfit_mime: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     调用阿里云 DashScope OutfitAnyone，完成上传、提交、轮询并返回 base64 + 静态链接。
     """
+    model_name = _normalize_model(model)
+    logger.info("Try-on request using model=%s", model_name)
     async with httpx.AsyncClient(timeout=60.0) as client:
-        policy = await _get_upload_policy(client)
+        policy = await _get_upload_policy(client, model_name)
     processed_person, person_mime = _prepare_image(user_bytes)
     processed_garment, garment_mime = _prepare_image(outfit_bytes)
 
@@ -174,7 +186,7 @@ async def generate_tryon_image(
     garment_url = await _upload_to_oss(policy, "garment.jpg", processed_garment, garment_mime)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        task_id = await _create_tryon_task(client, person_url, garment_url)
+        task_id = await _create_tryon_task(client, person_url, garment_url, model_name)
     output = await _poll_task(task_id)
     image_url = output.get("image_url")
     if not image_url:
@@ -196,8 +208,8 @@ async def generate_tryon_image(
 
     return {
         "result_image_base64": image_b64,
-        "model": TRYON_MODEL,
-        "prompt": "dashscope outfitanyone",
+        "model": model_name,
+        "prompt": f"dashscope outfitanyone {model_name}",
         "job_id": task_id,
         "image_url": static_url or image_url,
     }

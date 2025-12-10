@@ -1,6 +1,6 @@
 import logging
 import uuid
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.schemas import TryOnResponse
 from app.services.tryon import TryOnServiceError, generate_tryon_image
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 async def try_on(
     user_image: UploadFile = File(..., description="用户人像"),
     outfit_image: UploadFile = File(..., description="穿搭/衣物图片"),
+    model: str | None = Form(default=None, description="换装模型，如 aitryon / aitryon-plus"),
 ):
     user_bytes = await user_image.read()
     outfit_bytes = await outfit_image.read()
@@ -27,9 +28,16 @@ async def try_on(
             outfit_bytes=outfit_bytes,
             user_mime=user_image.content_type,
             outfit_mime=outfit_image.content_type,
+            model=model,
         )
         job_id = result.get("job_id") or uuid.uuid4().hex
-        logger.info("Try-on succeed job_id=%s user_image=%s outfit_image=%s", job_id, user_image.filename, outfit_image.filename)
+        logger.info(
+            "Try-on succeed job_id=%s user_image=%s outfit_image=%s model=%s",
+            job_id,
+            user_image.filename,
+            outfit_image.filename,
+            result.get("model"),
+        )
         return {
             "jobId": job_id,
             "resultImageBase64": result["result_image_base64"],

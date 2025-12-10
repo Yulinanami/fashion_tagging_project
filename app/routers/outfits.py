@@ -6,7 +6,7 @@ from typing import List, Optional, Set
 from pathlib import Path
 import time
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status, File, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status, File, UploadFile, Form
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.services.tagging import tag_image
 from app.services.renaming import build_new_name
 from app.services.llm_client import get_model
 from PIL import Image
+from google.api_core.exceptions import ResourceExhausted
 import tempfile
 import shutil
 import os
@@ -129,6 +130,7 @@ def _fallback_recommendation(
 @router.post("/outfits/upload", response_model=OutfitOut)
 async def upload_outfit(
     file: UploadFile = File(..., description="穿搭图片"),
+    model: str | None = Form(default=None, description="打标签模型，可选"),
     db: Session = Depends(get_db),
     current_user: User = Depends(_get_current_user),
 ):
@@ -140,7 +142,7 @@ async def upload_outfit(
 
     try:
         # 生成建议文件名
-        raw_tags = tag_image(tmp_path)
+        raw_tags = tag_image(tmp_path, model_name=model)
         tags = _map_tags(raw_tags)
         suggested_name = build_new_name(raw_tags, index=int(time.time()), ext=suffix.lower())
         static_root = Path("static") / "outfits" / "user_uploads"
@@ -149,8 +151,8 @@ async def upload_outfit(
 
         # 保存为 JPEG 保证兼容
         try:
-            img = Image.open(tmp_path).convert("RGB")
-            img.save(target_path, format="JPEG", quality=90)
+            with Image.open(tmp_path) as img:
+                img.convert("RGB").save(target_path, format="JPEG", quality=90)
         except Exception:
             shutil.copyfile(tmp_path, target_path)
 
@@ -173,6 +175,12 @@ async def upload_outfit(
             row.outfit_id for row in db.query(Favorite.outfit_id).filter(Favorite.user_id == current_user.id)
         }
         return _serialize(outfit, favorite_ids)
+    except ResourceExhausted as exc:
+        logger.warning("Upload outfit tagging quota exhausted model=%s: %s", model or "default", exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "tagging_quota_exceeded", "message": "打标签服务配额不足，请稍后重试或切换模型"},
+        )
     except Exception as exc:
         logger.exception("上传穿搭失败: %s", exc)
         raise HTTPException(status_code=500, detail={"code": "upload_failed", "message": str(exc)})
