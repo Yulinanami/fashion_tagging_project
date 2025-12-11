@@ -49,6 +49,7 @@
 
   ### 1. 环境准备
 
+  ```bash
   - Python 3.10+
   - 推荐使用虚拟环境
 
@@ -88,15 +89,17 @@
   QWEATHER_UNIT=m
   QWEATHER_TIMEOUT=6.0
   QWEATHER_CACHE_SECONDS=300
-
+  ```
 
   ### 3. 启动服务
 
+  ```bash
   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  启动后，接口默认暴露在：
+  启动后，接口为：
 
   - 本机：http://127.0.0.1:8000
   - 局域网其他设备：http://<你的IP>:8000
+  ```
 
   ———
